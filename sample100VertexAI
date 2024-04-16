@@ -1,0 +1,71 @@
+import json
+from jsonschema import validate, ValidationError
+import ipywidgets as widgets
+from IPython.display import display, clear_output
+import random
+import time
+
+# Define the schema based on Vertex AI requirements
+schema = {
+    "type": "object",
+    "properties": {
+        "content": {
+            "oneOf": [
+                {"type": "object", "properties": {"type": {"enum": ["textContent"]}, "textContent": {"type": "string"}}, "required": ["type", "textContent"]},
+                {"type": "object", "properties": {"type": {"enum": ["textGcsUri"]}, "textGcsUri": {"type": "string"}}, "required": ["type", "textGcsUri"]}
+            ]
+        },
+        "languageCode": {"type": "string", "default": "en-US"},
+        "classificationAnnotation": {"type": "object", "properties": {"displayName": {"type": "string"}}, "required": ["displayName"]},
+        "dataItemResourceLabels": {"type": "object", "additionalProperties": {"type": "string"}}
+    },
+    "required": ["content", "classificationAnnotation"]
+}
+
+# UI Widgets
+upload_button = widgets.FileUpload(accept=".jsonl", description='Upload JSONL File', multiple=False)
+loading_text = widgets.Label(value="Loading...", visible=False)  # Loading text before progress starts
+upload_progress = widgets.IntProgress(value=0, min=0, max=1, description='Uploading:', bar_style='info', orientation='horizontal')
+process_progress = widgets.IntProgress(value=0, min=0, max=100, description='Processing:', bar_style='success', orientation='horizontal')
+output_area = widgets.Output()
+
+def on_upload_change(change):
+    loading_text.visible = True  # Show loading text
+    display(loading_text)  # Display the loading text
+
+    time.sleep(2)  # Simulate initial delay
+    loading_text.visible = False  # Hide loading text once processing starts
+
+    if upload_button.value:
+        upload_progress.value = 0
+        upload_progress.value = 1  # Simulate upload completion
+        input_file = next(iter(upload_button.value.values()))
+        content = input_file['content'].decode('utf-8')
+        lines = content.splitlines()
+        sampled_lines = random.sample(lines, min(100, len(lines)))
+        errors = {}
+
+        process_progress.max = len(sampled_lines)  # Set progress bar max
+
+        for index, line in enumerate(sampled_lines):
+            try:
+                json_object = json.loads(line)
+                validate(instance=json_object, schema=schema)
+            except ValidationError as e:
+                error_message = str(e.message)[:100]  # Truncate message
+                errors[error_message] = errors.get(error_message, 0) + 1
+            process_progress.value = index + 1
+
+        with output_area:
+            clear_output()
+            print(f"Checked {len(sampled_lines)} lines.")
+            if errors:
+                print("Errors found (up to 20 shown):")
+                for i, (msg, count) in enumerate(errors.items()):
+                    if i < 20:
+                        print(f"- {msg} (x{count})")
+            else:
+                print("All checked lines meet the requirements.")
+
+upload_button.observe(on_upload_change, names='value')
+display(upload_button, upload_progress, process_progress, output_area)
